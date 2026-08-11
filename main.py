@@ -29,10 +29,41 @@ class TicketSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        # Aqui é onde vai responder quando a pessoa clicar na opção Suporte
         if self.values[0] == "suporte":
+            user = interaction.user
+            channel = interaction.channel
+            thread_name = f"suporte-{user.name}"
+
+            # Verifica se o usuário já tem um tópico aberto com esse nome
+            existing_thread = discord.utils.get(channel.threads, name=thread_name)
+            if existing_thread:
+                await interaction.response.send_message(
+                    f"Você já possui um tópico de suporte aberto: {existing_thread.mention}", 
+                    ephemeral=True
+                )
+                return
+
+            # Cria o tópico no canal do painel
+            thread = await channel.create_thread(
+                name=thread_name,
+                auto_archive_duration=1440, # Arquiva após 24h sem uso
+                type=discord.ChannelType.public_thread # Se o servidor tiver Level 2 de Boost, pode trocar por private_thread
+            )
+
+            # Adiciona o usuário no tópico
+            await thread.add_user(user)
+
+            # Envia a mensagem de recepção dentro do tópico
+            embed_ticket = discord.Embed(
+                title="🛠️ Atendimento de Suporte",
+                description=f"Olá {user.mention}, seja bem-vindo ao seu suporte!\nDescreva o seu problema ou dúvida abaixo que a equipe já vai te atender.",
+                color=discord.Color.from_rgb(255, 20, 147)
+            )
+            await thread.send(embed=embed_ticket)
+
+            # Responde a interação avisando que o tópico foi criado
             await interaction.response.send_message(
-                "Você selecionou a opção de **Suporte**! Em breve o canal do seu ticket será criado.", 
+                f"Seu tópico de suporte foi criado com sucesso: {thread.mention}", 
                 ephemeral=True
             )
 
@@ -65,3 +96,4 @@ if TOKEN:
     bot.run(TOKEN)
 else:
     print("ERRO: A variável 'DISCORD_TOKEN' não foi encontrada.")
+    
