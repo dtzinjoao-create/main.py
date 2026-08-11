@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-import asyncio
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -44,35 +43,22 @@ class TicketSelect(discord.ui.Select):
                 )
                 return
 
-            # Cria o tópico no canal do painel
+            # 1. Cria o tópico no canal do painel
             thread = await channel.create_thread(
                 name=thread_name,
                 auto_archive_duration=1440,
                 type=discord.ChannelType.public_thread
             )
 
-            # Adiciona o usuário no tópico
-            await thread.add_user(user)
-
-            # Aguarda 1 segundo e apaga a mensagem do sistema ("Bot adicionou Fulano ao tópico")
-            await asyncio.sleep(1)
-            async for message in thread.history(limit=5):
-                if message.type == discord.MessageType.recipient_add:
-                    try:
-                        await message.delete()
-                    except discord.Forbidden:
-                        pass # Bot precisa da permissão 'Gerenciar Mensagens' no canal
-                    break
-
-            # Envia a mensagem do ticket
+            # 2. Envia a embed marcando o usuário direto no texto (puxa o usuário sem criar mensagem do sistema)
             embed_ticket = discord.Embed(
                 title="🛠️ Atendimento de Suporte",
                 description=f"Olá {user.mention}, seja bem-vindo ao seu suporte!\nDescreva o seu problema ou dúvida abaixo que a equipe já vai te atender.",
                 color=discord.Color.from_rgb(255, 20, 147)
             )
-            await thread.send(embed=embed_ticket)
+            await thread.send(content=f"{user.mention}", embed=embed_ticket)
 
-            # Responde o usuário no canal principal
+            # 3. Avisa o usuário que o tópico foi criado
             await interaction.response.send_message(
                 f"Seu tópico de suporte foi criado com sucesso: {thread.mention}", 
                 ephemeral=True
