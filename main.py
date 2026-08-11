@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import os
+import asyncio
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -34,7 +35,7 @@ class TicketSelect(discord.ui.Select):
             channel = interaction.channel
             thread_name = f"suporte-{user.name}"
 
-            # Verifica se o usuário já tem um tópico aberto com esse nome
+            # Verifica se o usuário já tem um tópico aberto
             existing_thread = discord.utils.get(channel.threads, name=thread_name)
             if existing_thread:
                 await interaction.response.send_message(
@@ -46,14 +47,24 @@ class TicketSelect(discord.ui.Select):
             # Cria o tópico no canal do painel
             thread = await channel.create_thread(
                 name=thread_name,
-                auto_archive_duration=1440, # Arquiva após 24h sem uso
-                type=discord.ChannelType.public_thread # Se o servidor tiver Level 2 de Boost, pode trocar por private_thread
+                auto_archive_duration=1440,
+                type=discord.ChannelType.public_thread
             )
 
             # Adiciona o usuário no tópico
             await thread.add_user(user)
 
-            # Envia a mensagem de recepção dentro do tópico
+            # Aguarda 1 segundo e apaga a mensagem do sistema ("Bot adicionou Fulano ao tópico")
+            await asyncio.sleep(1)
+            async for message in thread.history(limit=5):
+                if message.type == discord.MessageType.recipient_add:
+                    try:
+                        await message.delete()
+                    except discord.Forbidden:
+                        pass # Bot precisa da permissão 'Gerenciar Mensagens' no canal
+                    break
+
+            # Envia a mensagem do ticket
             embed_ticket = discord.Embed(
                 title="🛠️ Atendimento de Suporte",
                 description=f"Olá {user.mention}, seja bem-vindo ao seu suporte!\nDescreva o seu problema ou dúvida abaixo que a equipe já vai te atender.",
@@ -61,7 +72,7 @@ class TicketSelect(discord.ui.Select):
             )
             await thread.send(embed=embed_ticket)
 
-            # Responde a interação avisando que o tópico foi criado
+            # Responde o usuário no canal principal
             await interaction.response.send_message(
                 f"Seu tópico de suporte foi criado com sucesso: {thread.mention}", 
                 ephemeral=True
