@@ -13,9 +13,10 @@ class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(
-                label="Selecione uma opção...", 
-                description="Clique aqui para ver o menu.", 
-                value="opcao_padrao"
+                label="Suporte", 
+                description="Clique aqui caso precise de um suporte.", 
+                emoji="<:emoji_1:1536798022384754789>",
+                value="suporte"
             )
         ]
         
@@ -24,20 +25,21 @@ class TicketSelect(discord.ui.Select):
             min_values=1, 
             max_values=1, 
             options=options,
-            custom_id="ticket_select_menu" # Identificador único necessário para persistência
+            custom_id="ticket_select_menu"
         )
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            "Você selecionou a opção do menu! Adicione a lógica do seu ticket aqui depois.", 
-            ephemeral=True
-        )
+        # Aqui é onde vai responder quando a pessoa clicar na opção Suporte
+        if self.values[0] == "suporte":
+            await interaction.response.send_message(
+                "Você selecionou a opção de **Suporte**! Em breve o canal do seu ticket será criado.", 
+                ephemeral=True
+            )
 
-# --- CONTÊINER PERSISTENTE (CORRIGIDO) ---
+# --- CONTÊINER PERSISTENTE ---
 class TicketView(discord.ui.View):
     def __init__(self):
-        # timeout=None AQUI na classe pai é o que resolve o erro do Log!
-        super().__init__(timeout=None) 
+        super().__init__(timeout=None)
         self.add_item(TicketSelect())
 
 # --- COMANDO DO PAINEL ---
@@ -55,7 +57,6 @@ async def painel(ctx):
 
 @bot.event
 async def on_ready():
-    # Registra a View persistente para funcionar após reinicializações
     bot.add_view(TicketView())
     print(f'Bot conectado com sucesso como {bot.user.name}')
 
@@ -64,4 +65,3 @@ if TOKEN:
     bot.run(TOKEN)
 else:
     print("ERRO: A variável 'DISCORD_TOKEN' não foi encontrada.")
-    
