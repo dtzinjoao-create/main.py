@@ -1,7 +1,8 @@
 import os
 import discord
+from discord import app_commands
 from discord.ext import commands
-from discord.ui import Select, View, Button
+from discord.ui import Select, View, Button, ChannelSelect, RoleSelect
 
 # --- CONFIGURAÇÕES DO BOT ---
 intents = discord.Intents.default()
@@ -9,24 +10,15 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ID do cargo de suporte principal puxado do Railway
-ID_CARGO_SUPORTE = int(os.getenv("ID_CARGO_SUPORTE", 123456789012345678))
+# URL do Banner e Thumbnail (mesmo link)
+URL_BANNER = "https://cdn.discordapp.com/attachments/1536248865689440257/1536252370923687966/file_000000007968820eb5f30b80ea7a23f2.png?ex=6a7aba03&is=6a796883&hm=c022e2edccce5bd166703d948a6bbc7b2ed79d4444383b8ea4405345353f74f9&"
 
-# --- LINKS DOS BANNERS E IMAGENS ---
-URL_THUMBNAIL_TICKET = "https://i.imgur.com/8N4aQ8L.png"
-
-# Banner enviado por você:
-URL_BANNER_PAINEL_INICIAL = "https://cdn.discordapp.com/attachments/1536248865689440257/1536252370923687966/file_000000007968820eb5f30b80ea7a23f2.png?ex=6a7aba03&is=6a796883&hm=c022e2edccce5bd166703d948a6bbc7b2ed79d4444383b8ea4405345353f74f9&"
-URL_BANNER_TICKET = "https://cdn.discordapp.com/attachments/1536248865689440257/1536252370923687966/file_000000007968820eb5f30b80ea7a23f2.png?ex=6a7aba03&is=6a796883&hm=c022e2edccce5bd166703d948a6bbc7b2ed79d4444383b8ea4405345353f74f9&"
-
-
-# --- CONFIGURAÇÃO DE CANAIS POR OPÇÃO DE TICKET ---
-CANAIS_OPCOES = {
-    "suporte": 123456789012345678,         # ID do Canal de Suporte
-    "reembolso": 123456789012345678,       # ID do Canal de Reembolso
-    "receber_evento": 123456789012345678,  # ID do Canal de Eventos
-    "vaga_mediador": 123456789012345678,   # ID do Canal de Mediadores
-    "divulgacao": 123456789012345678      # ID do Canal de Divulgação
+# --- ESTRUTURA DE CONFIGURAÇÕES EM MEMÓRIA ---
+# Essas variáveis armazenam as preferências definidas via /config_bot_ticket
+CONFIG = {
+    "canais_topicos": [],      # Lista de IDs de canais selecionados (até 5)
+    "cargos_marcados": [],     # Lista de IDs de cargos marcados (até 10)
+    "cargos_staff": []         # Lista de IDs de cargos com acesso às ações de Staff
 }
 
 
@@ -37,13 +29,13 @@ class MenuPainelStaffView(View):
 
     @discord.ui.button(label="Ver Cargos com Acesso", style=discord.ButtonStyle.secondary, emoji="👥")
     async def ver_cargos(self, interaction: discord.Interaction, button: Button):
-        cargo = interaction.guild.get_role(ID_CARGO_SUPORTE)
-        nome_cargo = cargo.mention if cargo else "`Cargo não configurado`"
+        cargos_mencao = [f"<@&{cid}>" for cid in CONFIG["cargos_marcados"]]
+        cargos_texto = ", ".join(cargos_mencao) if cargos_mencao else "`Nenhum cargo configurado`"
         
         embed = discord.Embed(
             title="👥 Cargos Marcados para Ver o Ticket",
             description=(
-                f"**Cargo Principal de Suporte:** {nome_cargo}\n\n"
+                f"**Cargos Notificados:** {cargos_texto}\n\n"
                 "📌 **Nota:** Qualquer pessoa ou cargo que for **mencionado/marcado** dentro deste tópico "
                 "terá permissão automática para visualizar e interagir no ticket."
             ),
@@ -73,10 +65,15 @@ class MenuPainelStaffView(View):
         os.remove(nome_arquivo)
 
 
-# --- VIEW COM OS BOTÕES PRINCIPAIS DO TICKET ---
+# --- VIEW DE AÇÕES DO TICKET (DENTRO DO TÓPICO) ---
 class PainelTicketView(View):
     def __init__(self):
         super().__init__(timeout=None)
+
+    def e_staff(self, user: discord.Member) -> bool:
+        if user.guild_permissions.administrator:
+            return True
+        return any(role.id in CONFIG["cargos_staff"] for role in user.roles)
 
     @discord.ui.button(
         label="Assumir",
@@ -85,10 +82,9 @@ class PainelTicketView(View):
         custom_id="btn_assumir_ticket"
     )
     async def assumir_callback(self, interaction: discord.Interaction, button: Button):
-        cargo_suporte = interaction.guild.get_role(ID_CARGO_SUPORTE)
-        if cargo_suporte not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+        if not self.e_staff(interaction.user):
             return await interaction.response.send_message(
-                "Apenas membros da equipe podem assumir este ticket!",
+                "Apenas membros da equipe permitida podem assumir este ticket!",
                 ephemeral=True
             )
 
@@ -105,6 +101,12 @@ class PainelTicketView(View):
         custom_id="btn_finalizar_ticket"
     )
     async def finalizar_callback(self, interaction: discord.Interaction, button: Button):
+        if not self.e_staff(interaction.user):
+            return await interaction.response.send_message(
+                "Apenas membros da equipe permitida podem finalizar este ticket!",
+                ephemeral=True
+            )
+
         await interaction.response.send_message(
             "🔒 **O ticket será DELETADO em 5 segundos...**"
         )
@@ -120,8 +122,7 @@ class PainelTicketView(View):
         custom_id="btn_painel_staff"
     )
     async def painel_staff_callback(self, interaction: discord.Interaction, button: Button):
-        cargo_suporte = interaction.guild.get_role(ID_CARGO_SUPORTE)
-        if cargo_suporte not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+        if not self.e_staff(interaction.user):
             return await interaction.response.send_message(
                 "Você não tem permissão para acessar o Painel Staff.",
                 ephemeral=True
@@ -134,7 +135,7 @@ class PainelTicketView(View):
         )
 
 
-# --- DEFINIÇÃO DO MENU (SELECT) ---
+# --- MENU DE SELEÇÃO DE ATENDIMENTO ---
 class MenuAjudaSelect(Select):
     def __init__(self):
         options = [
@@ -182,33 +183,38 @@ class MenuAjudaSelect(Select):
         opcao = self.values[0]
         usuario = interaction.user
 
+        # REGRA: Limitação de 1 ticket ativo por usuário
+        for thread in interaction.guild.threads:
+            if thread.name.endswith(f"-{usuario.name}") and not thread.archived:
+                return await interaction.response.send_message(
+                    "❌ **Você já possui um ticket em andamento!** Finalize o ticket atual antes de abrir outro.",
+                    ephemeral=True
+                )
+
         await interaction.response.send_message(
             content="**verificando...**",
             ephemeral=True
         )
 
-        id_canal_destino = CANAIS_OPCOES.get(opcao, interaction.channel.id)
-        canal_destino = interaction.guild.get_channel(id_canal_destino) or interaction.channel
+        # Escolhe o canal apropriado com base nos canais configurados
+        canal_destino = interaction.channel
+        if CONFIG["canais_topicos"]:
+            canal_destino = interaction.guild.get_channel(CONFIG["canais_topicos"][0]) or interaction.channel
 
-        if opcao == "suporte":
-            nome_topico = f"suporte-{usuario.name}"
-        elif opcao == "reembolso":
-            nome_topico = f"reembolso-{usuario.name}"
-        elif opcao == "receber_evento":
-            nome_topico = f"evento-{usuario.name}"
-        elif opcao == "vaga_mediador":
-            nome_topico = f"mediador-{usuario.name}"
-        elif opcao == "divulgacao":
-            nome_topico = f"divulgacao-{usuario.name}"
+        nome_topico = f"{opcao}-{usuario.name}"
 
-        # 1. Criação do Tópico Privado no canal escolhido
+        # 1. Cria o Tópico Privado
         topico = await canal_destino.create_thread(
             name=nome_topico,
             type=discord.ChannelType.private_thread,
             auto_archive_duration=1440
         )
 
-        # 2. Embed do Ticket Privado (Com Banner e Thumbnail)
+        # 2. Monta as menções de cargos configurados
+        mencoes_cargos = " ".join([f"<@&{cid}>" for cid in CONFIG["cargos_marcados"]])
+        conteudo_mencao = f"{usuario.mention} {mencoes_cargos}".strip()
+
+        # 3. Embed do Ticket (Banner + Thumbnail idênticos)
         embed_ticket = discord.Embed(
             title="Ticket de Suporte",
             description=(
@@ -219,38 +225,112 @@ class MenuAjudaSelect(Select):
             ),
             color=discord.Color.from_rgb(255, 20, 147)
         )
-        embed_ticket.set_thumbnail(url=URL_THUMBNAIL_TICKET)
-        embed_ticket.set_image(url=URL_BANNER_TICKET)
+        embed_ticket.set_thumbnail(url=URL_BANNER)
+        embed_ticket.set_image(url=URL_BANNER)
 
-        # 3. Envia as menções + Embed + Botões no tópico
+        # 4. Envia a mensagem no tópico com botões
         await topico.send(
-            content=f"{usuario.mention} <@&{ID_CARGO_SUPORTE}>",
+            content=conteudo_mencao,
             embed=embed_ticket,
             view=PainelTicketView()
         )
 
-        # 4. Atualiza a mensagem ephemeral com o link do ticket
+        # 5. Atualiza a confirmação ao usuário
         await interaction.edit_original_response(
             content=f"ticket criado com sucesso! {topico.mention}"
         )
 
 
-# --- VIEW DO MENU INICIAL ---
 class MenuAjudaView(View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(MenuAjudaSelect())
 
 
-# --- EVENTOS DO BOT ---
+# --- VIEWS E MENUS DO COMANDO SLASH DE CONFIGURAÇÃO ---
+class ConfigBotView(View):
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.select(
+        cls=ChannelSelect,
+        placeholder="Em qual canal vai criar cada tópico? (Até 5 canais)",
+        min_values=1,
+        max_values=5,
+        channel_types=[discord.ChannelType.text]
+    )
+    async def select_canais(self, interaction: discord.Interaction, select: ChannelSelect):
+        CONFIG["canais_topicos"] = [channel.id for channel in select.values]
+        await interaction.response.send_message(
+            f"✅ **Canais configurados:** {', '.join([c.mention for c in select.values])}",
+            ephemeral=True
+        )
+
+    @discord.ui.select(
+        cls=RoleSelect,
+        placeholder="Quais cargos serão marcados no ticket? (Até 10 cargos)",
+        min_values=1,
+        max_values=10
+    )
+    async def select_cargos_marcados(self, interaction: discord.Interaction, select: RoleSelect):
+        CONFIG["cargos_marcados"] = [role.id for role in select.values]
+        await interaction.response.send_message(
+            f"✅ **Cargos a serem marcados:** {', '.join([r.mention for r in select.values])}",
+            ephemeral=True
+        )
+
+    @discord.ui.select(
+        cls=RoleSelect,
+        placeholder="Quem pode assumir, finalizar e acessar o painel staff?",
+        min_values=1,
+        max_values=10
+    )
+    async def select_cargos_staff(self, interaction: discord.Interaction, select: RoleSelect):
+        CONFIG["cargos_staff"] = [role.id for role in select.values]
+        await interaction.response.send_message(
+            f"✅ **Cargos de Staff com permissão:** {', '.join([r.mention for r in select.values])}",
+            ephemeral=True
+        )
+
+
+# --- COMANDO SLASH DE CONFIGURAÇÃO ---
+@bot.tree.command(name="config_bot_ticket", description="Configura os canais, cargos e permissões do sistema de ticket.")
+@app_commands.default_permissions(administrator=True)
+async def config_bot_ticket(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="⚙️ Configuração do Sistema de Ticket",
+        description=(
+            "Use os menus abaixo para personalizar a operação do bot:\n\n"
+            "1️⃣ **Canais dos Tópicos:** Selecione até 5 canais onde os tópicos poderão ser criados.\n"
+            "2️⃣ **Cargos Marcados:** Escolha até 10 cargos notificados na abertura do ticket.\n"
+            "3️⃣ **Permissão Staff:** Escolha quem pode gerenciar (assumir, finalizar, abrir painel staff).\n\n"
+            "📌 *Limitação Ativa:* **Só é permitido 1 ticket por usuário por vez.**"
+        ),
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=URL_BANNER)
+    
+    await interaction.response.send_message(
+        embed=embed,
+        view=ConfigBotView(),
+        ephemeral=True
+    )
+
+
+# --- EVENTOS E SYNC DE COMANDOS SLASH ---
 @bot.event
 async def on_ready():
     bot.add_view(MenuAjudaView())
     bot.add_view(PainelTicketView())
+    try:
+        synced = await bot.tree.sync()
+        print(f"Comandos slash sincronizados: {len(synced)}")
+    except Exception as e:
+        print(f"Erro ao sincronizar comandos slash: {e}")
     print(f"Bot online como {bot.user.name}!")
 
 
-# --- COMANDO PARA ENVIAR O PAINEL INICIAL ---
+# --- COMANDO CONVENCIONAL PARA ENVIAR O PAINEL INICIAL ---
 @bot.command(name="painel")
 @commands.has_permissions(administrator=True)
 async def enviar_painel(ctx):
@@ -259,16 +339,18 @@ async def enviar_painel(ctx):
         description="Escolha uma das opções abaixo para abrir um chamado privado:",
         color=discord.Color.blue()
     )
-    embed.set_image(url=URL_BANNER_PAINEL_INICIAL)
+    embed.set_thumbnail(url=URL_BANNER)
+    embed.set_image(url=URL_BANNER)
     embed.set_footer(text="Selecione a opção no menu abaixo.")
     
     await ctx.send(embed=embed, view=MenuAjudaView())
 
 
-# --- INICIALIZAÇÃO VIA VARIÁVEL DE AMBIENTE (RAILWAY) ---
+# --- INICIALIZAÇÃO VIA VARIÁVEL DE AMBIENTE ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
-    raise ValueError("ERRO CRÍTICO: A variável 'DISCORD_TOKEN' não foi configurada no Railway!")
+    raise ValueError("ERRO CRÍTICO: A variável 'DISCORD_TOKEN' não foi configurada!")
 
 bot.run(TOKEN)
+        
