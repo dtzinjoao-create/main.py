@@ -1,7 +1,7 @@
 import os
 import discord
 from discord.ext import commands
-from discord.ui import Select, View
+from discord.ui import Select, View, Button
 
 # --- CONFIGURAÇÕES DO BOT ---
 intents = discord.Intents.default()
@@ -11,6 +11,68 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ID do cargo de suporte puxado das variáveis de ambiente do Railway
 ID_CARGO_SUPORTE = int(os.getenv("ID_CARGO_SUPORTE", 123456789012345678))
+
+# URL da imagem do logotipo/thumbnail do ticket
+URL_THUMBNAIL_TICKET = "https://i.imgur.com/8N4aQ8L.png"
+
+
+# --- VIEW COM OS BOTÕES DO TICKET ---
+class PainelTicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Persistente
+
+    @discord.ui.button(
+        label="Assumir",
+        style=discord.ButtonStyle.success,
+        emoji="<:emoji_10:1536910081730412674>",  # Emoji atualizado
+        custom_id="btn_assumir_ticket"
+    )
+    async def assumir_callback(self, interaction: discord.Interaction, button: Button):
+        cargo_suporte = interaction.guild.get_role(ID_CARGO_SUPORTE)
+        if cargo_suporte not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                "Apenas membros da equipe podem assumir este ticket!",
+                ephemeral=True
+            )
+
+        embed_assumido = discord.Embed(
+            description=f"📌 O suporte {interaction.user.mention} assumiu este atendimento!",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed_assumido)
+
+    @discord.ui.button(
+        label="Finalizar",
+        style=discord.ButtonStyle.danger,
+        emoji="<:emoji_9:1536910049870610624>",  # Emoji atualizado
+        custom_id="btn_finalizar_ticket"
+    )
+    async def finalizar_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message(
+            "🔒 **O ticket será fechado e arquivado em 5 segundos...**"
+        )
+        await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(seconds=5))
+        if isinstance(interaction.channel, discord.Thread):
+            await interaction.channel.edit(archived=True, locked=True)
+
+    @discord.ui.button(
+        label="Painel Staff",
+        style=discord.ButtonStyle.primary,
+        emoji="<:emoji_2:1536869754944487486>",  # Emoji atualizado
+        custom_id="btn_painel_staff"
+    )
+    async def painel_staff_callback(self, interaction: discord.Interaction, button: Button):
+        cargo_suporte = interaction.guild.get_role(ID_CARGO_SUPORTE)
+        if cargo_suporte not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                "Você não tem permissão para acessar o Painel Staff.",
+                ephemeral=True
+            )
+
+        await interaction.response.send_message(
+            "🛠️ **Painel Staff:** Utilize os comandos administrativos de gerenciamento de chamados aqui.",
+            ephemeral=True
+        )
 
 
 # --- DEFINIÇÃO DO MENU (SELECT) ---
@@ -62,7 +124,6 @@ class MenuAjudaSelect(Select):
         usuario = interaction.user
         canal = interaction.channel
 
-        # 1. Responde na hora avisando que está verificando
         await interaction.response.send_message(
             content="**verificando...**",
             ephemeral=True
@@ -70,43 +131,49 @@ class MenuAjudaSelect(Select):
 
         if opcao == "opcao_1":
             nome_topico = f"atendimento-{usuario.name}"
-            msg_boas_vindas = f"Olá {usuario.mention}, você abriu um atendimento para **Primeira Opção**! Aguarde um suporte."
-        
         elif opcao == "reembolso":
             nome_topico = f"reembolso-{usuario.name}"
-            msg_boas_vindas = f"Olá {usuario.mention}, você solicitou **REEMBOLSO**. Aguarde um responsável para dar andamento ao seu pedido."
-
         elif opcao == "receber_evento":
             nome_topico = f"evento-{usuario.name}"
-            msg_boas_vindas = f"Olá {usuario.mention}, você abriu um ticket para **Receber evento**. Aguarde a equipe para resgatar sua recompensa!"
-
         elif opcao == "vaga_mediador":
             nome_topico = f"mediador-{usuario.name}"
-            msg_boas_vindas = f"Olá {usuario.mention}, você abriu um chamado referente à **Vaga mediador**. Aguarde um responsável pela equipe!"
-
         elif opcao == "divulgacao":
             nome_topico = f"divulgacao-{usuario.name}"
-            msg_boas_vindas = f"Olá {usuario.mention}, você abriu um ticket sobre **Divulgação**. Aguarde a equipe responsável para tratar do assunto!"
 
-        # 2. Criação do Tópico Privado
+        # 1. Criação do Tópico Privado
         topico = await canal.create_thread(
             name=nome_topico,
             type=discord.ChannelType.private_thread,
             auto_archive_duration=1440
         )
 
-        # 3. Notifica dentro do tópico privado
+        # 2. Montagem do Embed do Ticket
+        embed_ticket = discord.Embed(
+            title="Ticket de Suporte",
+            description=(
+                "Seja bem-vindo(a) ao painel de controle deste ticket.\n"
+                "Dependendo do horário em que este ticket foi aberto, "
+                "os atendimentos podem demorar um pouquinho.\n\n"
+                "*Em breve os atendentes irão lhe atender, peço que tenha paciência.*"
+            ),
+            color=discord.Color.from_rgb(255, 20, 147)
+        )
+        embed_ticket.set_thumbnail(url=URL_THUMBNAIL_TICKET)
+
+        # 3. Envia as menções + Embed + Botões Personalizados no tópico privado
         await topico.send(
-            content=f"{usuario.mention} <@&{ID_CARGO_SUPORTE}>\n\n{msg_boas_vindas}"
+            content=f"{usuario.mention} <@&{ID_CARGO_SUPORTE}>",
+            embed=embed_ticket,
+            view=PainelTicketView()
         )
 
-        # 4. Atualiza a mensagem confirmando a criação do ticket
+        # 4. Atualiza a mensagem confirmando a criação
         await interaction.edit_original_response(
             content=f"ticket criado com sucesso! {topico.mention}"
         )
 
 
-# --- VIEW DO MENU ---
+# --- VIEW DO MENU INICIAL ---
 class MenuAjudaView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -117,6 +184,7 @@ class MenuAjudaView(View):
 @bot.event
 async def on_ready():
     bot.add_view(MenuAjudaView())
+    bot.add_view(PainelTicketView())
     print(f"Bot online como {bot.user.name}!")
 
 
@@ -136,5 +204,9 @@ async def enviar_painel(ctx):
 
 # --- INICIALIZAÇÃO VIA VARIÁVEL DE AMBIENTE (RAILWAY) ---
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+if not TOKEN:
+    raise ValueError("ERRO CRÍTICO: A variável 'DISCORD_TOKEN' não foi configurada no Railway!")
+
 bot.run(TOKEN)
-    
+            
