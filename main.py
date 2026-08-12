@@ -14,7 +14,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 URL_BANNER = "https://cdn.discordapp.com/attachments/1536248865689440257/1536252370923687966/file_000000007968820eb5f30b80ea7a23f2.png?ex=6a7aba03&is=6a796883&hm=c022e2edccce5bd166703d948a6bbc7b2ed79d4444383b8ea4405345353f74f9&"
 
 # --- ESTRUTURA DE CONFIGURAÇÕES EM MEMÓRIA ---
-# Essas variáveis armazenam as preferências definidas via /config_bot_ticket
 CONFIG = {
     "canais_topicos": [],      # Lista de IDs de canais selecionados (até 5)
     "cargos_marcados": [],     # Lista de IDs de cargos marcados (até 10)
@@ -196,7 +195,6 @@ class MenuAjudaSelect(Select):
             ephemeral=True
         )
 
-        # Escolhe o canal apropriado com base nos canais configurados
         canal_destino = interaction.channel
         if CONFIG["canais_topicos"]:
             canal_destino = interaction.guild.get_channel(CONFIG["canais_topicos"][0]) or interaction.channel
@@ -214,7 +212,7 @@ class MenuAjudaSelect(Select):
         mencoes_cargos = " ".join([f"<@&{cid}>" for cid in CONFIG["cargos_marcados"]])
         conteudo_mencao = f"{usuario.mention} {mencoes_cargos}".strip()
 
-        # 3. Embed do Ticket (Banner + Thumbnail idênticos)
+        # 3. Embed do Ticket
         embed_ticket = discord.Embed(
             title="Ticket de Suporte",
             description=(
@@ -228,14 +226,14 @@ class MenuAjudaSelect(Select):
         embed_ticket.set_thumbnail(url=URL_BANNER)
         embed_ticket.set_image(url=URL_BANNER)
 
-        # 4. Envia a mensagem no tópico com botões
+        # 4. Envia no tópico
         await topico.send(
             content=conteudo_mencao,
             embed=embed_ticket,
             view=PainelTicketView()
         )
 
-        # 5. Atualiza a confirmação ao usuário
+        # 5. Confirmação
         await interaction.edit_original_response(
             content=f"ticket criado com sucesso! {topico.mention}"
         )
@@ -247,7 +245,7 @@ class MenuAjudaView(View):
         self.add_item(MenuAjudaSelect())
 
 
-# --- VIEWS E MENUS DO COMANDO SLASH DE CONFIGURAÇÃO ---
+# --- VIEWS DO COMANDO SLASH DE CONFIGURAÇÃO ---
 class ConfigBotView(View):
     def __init__(self):
         super().__init__(timeout=180)
@@ -330,13 +328,21 @@ async def on_ready():
     print(f"Bot online como {bot.user.name}!")
 
 
-# --- COMANDO CONVENCIONAL PARA ENVIAR O PAINEL INICIAL ---
+# --- COMANDO PARA ENVIAR O PAINEL DE ATENDIMENTO ---
 @bot.command(name="painel")
 @commands.has_permissions(administrator=True)
 async def enviar_painel(ctx):
     embed = discord.Embed(
         title="Central de Atendimento",
-        description="Escolha uma das opções abaixo para abrir um chamado privado:",
+        description=(
+            "Caso precise de algum suporte ou tenha alguma dúvida basta abrir um ticket abaixo. "
+            "Selecione a opção do ticket de acordo com a sua necessidade, aqui nos temos essa categoria:\n\n"
+            "**SUPORTE** : caso precise de alguma, problema com alguma coisa ou etc nós sempre estaremos aqui para resolver!\n\n"
+            "**REEMBOLSO** : caso se o mediador tiver feito alguma coisa de errado, aí sim você pode acionar o reembolso para nós reembolsar sua grana, só venha com provas!\n\n"
+            "**RECEBER EVENTO** : ganhou uma partida e tinha evento?, Falou com adm e ele concordou? ganhou a partida? Ganhou o evento tá bem! Obs: só quando tiver eventos\n\n"
+            "**VAGA MEDIADOR** : caso você queira e tem o dinheiro de ser mediador podem acionar!\n\n"
+            "**Divulgação** : caso queira divulgar a nossa org, estamos pagando bem!"
+        ),
         color=discord.Color.blue()
     )
     embed.set_thumbnail(url=URL_BANNER)
@@ -353,4 +359,4 @@ if not TOKEN:
     raise ValueError("ERRO CRÍTICO: A variável 'DISCORD_TOKEN' não foi configurada!")
 
 bot.run(TOKEN)
-        
+    
