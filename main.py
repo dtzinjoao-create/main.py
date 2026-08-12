@@ -9,7 +9,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Puxa o ID do cargo das variáveis do Railway (ou usa o ID direto se preferir)
+# ID do cargo de suporte puxado das variáveis de ambiente do Railway
 ID_CARGO_SUPORTE = int(os.getenv("ID_CARGO_SUPORTE", 123456789012345678))
 
 
@@ -44,7 +44,11 @@ class MenuAjudaSelect(Select):
         usuario = interaction.user
         canal = interaction.channel
 
-        await interaction.response.defer(ephemeral=True)
+        # 1. Responde na hora com a animação de "Verificando..." (Apenas para o usuário)
+        await interaction.response.send_message(
+            content="https://www.image2url.com/r2/default/gifs/1786495596104-d98cb147-d9b0-48be-82bb-574359c98b08.gif **verificando...**",
+            ephemeral=True
+        )
 
         if opcao == "opcao_1":
             nome_topico = f"atendimento-{usuario.name}"
@@ -54,21 +58,21 @@ class MenuAjudaSelect(Select):
             nome_topico = f"reembolso-{usuario.name}"
             msg_boas_vindas = f"Olá {usuario.mention}, você solicitou **REEMBOLSO**. Aguarde um responsável para dar andamento ao seu pedido."
 
-        # Criação do Tópico Privado
+        # 2. Criação do Tópico Privado
         topico = await canal.create_thread(
             name=nome_topico,
             type=discord.ChannelType.private_thread,
             auto_archive_duration=1440
         )
 
-        # Notifica e adiciona silenciosamente os envolvidos
+        # 3. Notifica dentro do tópico privado
         await topico.send(
             content=f"{usuario.mention} <@&{ID_CARGO_SUPORTE}>\n\n{msg_boas_vindas}"
         )
 
-        await interaction.followup.send(
-            content=f"Seu atendimento foi aberto com sucesso em: {topico.mention}",
-            ephemeral=True
+        # 4. Edita a mensagem temporária com a animação de Sucesso + Link do Tópico
+        await interaction.edit_original_response(
+            content=f"https://www.image2url.com/r2/default/gifs/1786495690059-7d9291f0-c925-42bf-92bc-1f67be6fb288.gif ticket criado com sucesso! {topico.mention}"
         )
 
 
