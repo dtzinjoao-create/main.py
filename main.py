@@ -15,10 +15,13 @@ URL_BANNER = "https://cdn.discordapp.com/attachments/1536248865689440257/1536252
 
 # --- ESTRUTURA DE CONFIGURAÇÕES EM MEMÓRIA ---
 CONFIG = {
-    "canais_topicos": [],      # Lista de IDs de canais selecionados (até 5)
+    "canais_topicos": [],      # Lista com até 5 IDs [Suporte, Reembolso, Evento, Mediador, Divulgação]
     "cargos_marcados": [],     # Lista de IDs de cargos marcados (até 10)
     "cargos_staff": []         # Lista de IDs de cargos com acesso às ações de Staff
 }
+
+# Mapeamento da ordem dos canais selecionados para cada opção
+ORDEM_OPCOES = ["suporte", "reembolso", "receber_evento", "vaga_mediador", "divulgacao"]
 
 
 # --- VIEW DO PAINEL STAFF ---
@@ -106,10 +109,11 @@ class PainelTicketView(View):
                 ephemeral=True
             )
 
+        # Deleta em 1 segundo
         await interaction.response.send_message(
-            "🔒 **O ticket será DELETADO em 5 segundos...**"
+            "🔒 **O ticket será DELETADO em 1 segundo...**"
         )
-        await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(seconds=5))
+        await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(seconds=1))
         
         if isinstance(interaction.channel, discord.Thread):
             await interaction.channel.delete()
@@ -195,13 +199,23 @@ class MenuAjudaSelect(Select):
             ephemeral=True
         )
 
+        # Mapeia qual canal usar com base no 1º, 2º, 3º, 4º ou 5º canal escolhido no /config_bot_ticket
         canal_destino = interaction.channel
         if CONFIG["canais_topicos"]:
-            canal_destino = interaction.guild.get_channel(CONFIG["canais_topicos"][0]) or interaction.channel
+            try:
+                index_canal = ORDEM_OPCOES.index(opcao)
+                if index_canal < len(CONFIG["canais_topicos"]):
+                    cid = CONFIG["canais_topicos"][index_canal]
+                    canal_destino = interaction.guild.get_channel(cid) or interaction.channel
+                else:
+                    # Se não configurou o canal correspondente, usa o 1º configurado
+                    canal_destino = interaction.guild.get_channel(CONFIG["canais_topicos"][0]) or interaction.channel
+            except ValueError:
+                pass
 
         nome_topico = f"{opcao}-{usuario.name}"
 
-        # 1. Cria o Tópico Privado
+        # 1. Cria o Tópico Privado no canal específico
         topico = await canal_destino.create_thread(
             name=nome_topico,
             type=discord.ChannelType.private_thread,
@@ -252,7 +266,7 @@ class ConfigBotView(View):
 
     @discord.ui.select(
         cls=ChannelSelect,
-        placeholder="Em qual canal vai criar cada tópico? (Até 5 canais)",
+        placeholder="Selecione até 5 canais (1º Suporte, 2º Reembolso, 3º Evento...)",
         min_values=1,
         max_values=5,
         channel_types=[discord.ChannelType.text]
@@ -260,7 +274,7 @@ class ConfigBotView(View):
     async def select_canais(self, interaction: discord.Interaction, select: ChannelSelect):
         CONFIG["canais_topicos"] = [channel.id for channel in select.values]
         await interaction.response.send_message(
-            f"✅ **Canais configurados:** {', '.join([c.mention for c in select.values])}",
+            f"✅ **Canais configurados em ordem:** {', '.join([c.mention for c in select.values])}",
             ephemeral=True
         )
 
@@ -299,7 +313,12 @@ async def config_bot_ticket(interaction: discord.Interaction):
         title="⚙️ Configuração do Sistema de Ticket",
         description=(
             "Use os menus abaixo para personalizar a operação do bot:\n\n"
-            "1️⃣ **Canais dos Tópicos:** Selecione até 5 canais onde os tópicos poderão ser criados.\n"
+            "1️⃣ **Canais dos Tópicos:** Selecione até 5 canais na ordem exata:\n"
+            "   • 1º Canal ➔ Suporte\n"
+            "   • 2º Canal ➔ Reembolso\n"
+            "   • 3º Canal ➔ Receber Evento\n"
+            "   • 4º Canal ➔ Vaga Mediador\n"
+            "   • 5º Canal ➔ Divulgação\n\n"
             "2️⃣ **Cargos Marcados:** Escolha até 10 cargos notificados na abertura do ticket.\n"
             "3️⃣ **Permissão Staff:** Escolha quem pode gerenciar (assumir, finalizar, abrir painel staff).\n\n"
             "📌 *Limitação Ativa:* **Só é permitido 1 ticket por usuário por vez.**"
@@ -328,10 +347,16 @@ async def on_ready():
     print(f"Bot online como {bot.user.name}!")
 
 
-# --- COMANDO PARA ENVIAR O PAINEL DE ATENDIMENTO ---
+# --- COMANDO PARA ENVIAR O PAINEL DE ATENDIMENTO (1 ÚNICO PAINEL) ---
 @bot.command(name="painel")
 @commands.has_permissions(administrator=True)
 async def enviar_painel(ctx):
+    # Apaga a mensagem do comando para deixar limpo
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+
     embed = discord.Embed(
         title="Central de Atendimento",
         description=(
@@ -359,4 +384,3 @@ if not TOKEN:
     raise ValueError("ERRO CRÍTICO: A variável 'DISCORD_TOKEN' não foi configurada!")
 
 bot.run(TOKEN)
-    
